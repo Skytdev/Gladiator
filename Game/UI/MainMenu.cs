@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Gladiator.UI
+namespace Gladiator.Game.UI
 {
     internal class MainMenu
     {

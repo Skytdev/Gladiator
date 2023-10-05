@@ -1,8 +1,11 @@
-﻿using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
+﻿using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
-using System;
+using Microsoft.Xna.Framework;
 using System.Collections.Generic;
+using System.IO;
+using System;
+
+
 
 public class Game1 : Game
 {
@@ -28,8 +31,8 @@ public class Game1 : Game
     float spawnTimer = 0;
     const float SPAWN_INTERVAL = 4.0f;
     const float ORC_SPEED = 3f;
-    const int ORC_WIDTH = 180;
-    const int ORC_HEIGHT = 100;
+    const int ORC_WIDTH = 280;
+    const int ORC_HEIGHT = 180;
     Random random = new Random();
 
     // Arrows
@@ -37,10 +40,14 @@ public class Game1 : Game
     float arrowSpeed = 500;
     float timeSinceLastArrow = 0f;
 
-    // Animations
+    // SpritesList
     List<AnimatedSprite> explosionSprites = new List<AnimatedSprite>();
-    Animation ExplosionAnimation;
+    List<AnimatedSprite> dyingOrcSprites = new List<AnimatedSprite>();
 
+    // Animations
+    Animation ExplosionAnimation;
+    Animation orcWalkingAnimation;
+    Animation orcDieAnimation;
 
     public Game1()
     {
@@ -65,14 +72,18 @@ public class Game1 : Game
         arenaTexture = Content.Load<Texture2D>("Textures/arena");
         warriorTexture = Content.Load<Texture2D>("Textures/warrior");
 
-
         LoadExplosionAnimation();
+        LoadOrcWalkingAnimation();
+        LoadOrcDieAnimation();
     }
 
     private void LoadExplosionAnimation()
     {
-        Texture2D[] ExplosionFrames = new Texture2D[10];
-        for (int i = 1; i < 10; i++)
+        string path = "Content/Textures/Animation/Explosion"; // Modified path
+        string[] files = Directory.GetFiles(path, "*");
+
+        Texture2D[] ExplosionFrames = new Texture2D[files.Length];
+        for (int i = 1; i < files.Length; i++)
         {
             ExplosionFrames[i] = Content.Load<Texture2D>($"Textures/Animation/Explosion/Explosion_{i}");
         }
@@ -80,36 +91,61 @@ public class Game1 : Game
         ExplosionAnimation = new Animation(0.1f, ExplosionFrames);
     }
 
+    private void LoadOrcWalkingAnimation()
+    {
+        string path = "Content/Textures/Animation/NPC/Warriors_Orc/OrcWalk"; // Modified path
+        string[] files = Directory.GetFiles(path, "*");
+
+        Texture2D[] orcWalkingFrames = new Texture2D[files.Length];
+        for (int i = 0; i < files.Length; i++)
+        {
+            orcWalkingFrames[i] = Content.Load<Texture2D>($"Textures/Animation/NPC/Warriors_Orc/OrcWalk/ORK_01_WALK_00{i}"); // Modified file loading logic
+        }
+        orcWalkingAnimation = new Animation(0.1f, orcWalkingFrames);
+    }
+
+    private void LoadOrcDieAnimation()
+    {
+        string path = "Content/Textures/Animation/NPC/Warriors_Orc/OrcDie";
+        string[] files = Directory.GetFiles(path, "*");
+
+        Texture2D[] orcDieFrames = new Texture2D[files.Length];
+        for (int i = 0; i < files.Length - 1; i++)
+        {
+            orcDieFrames[i] = Content.Load<Texture2D>($"Textures/Animation/NPC/Warriors_Orc/OrcDie/ORK_01_DIE_00{i}");
+        }
+        orcDieAnimation = new Animation(0.1f, orcDieFrames);
+    }
+
     protected override void Update(GameTime gameTime)
     {
         var keyboardState = Keyboard.GetState();
         playerPosition.Y = Math.Clamp(playerPosition.Y, MAP_TOP_BOUNDARY, MAP_BOTTOM_BOUNDARY - PLAYER_HEIGHT);
 
-        // Player Movement
         PlayerMovement(keyboardState);
 
-        // Arrow shooting
         ShootArrow(gameTime, keyboardState);
 
-        // Supprimez les explosions terminées
         ClearPastExplosions(gameTime);
 
-        // Mise à jour de la position des flèches
-        UpdateArrowPosition(gameTime);
-
-        // Vérifier les collisions flèche-orc
         CheckCollisionArrowOrcs();
 
-        // Orc spawning
         OrcsSpawning(gameTime);
 
-        // Update Orcs
         UpdateOrcs(gameTime);
 
-        // Update arrows
         UpdateArrows(gameTime);
 
         base.Update(gameTime);
+    }
+
+    // Update Methods
+    private void PlayerMovement(KeyboardState keyboardState)
+    {
+        if (keyboardState.IsKeyDown(Keys.Up)) playerPosition.Y -= PLAYER_SPEED;
+        if (keyboardState.IsKeyDown(Keys.Down)) playerPosition.Y += PLAYER_SPEED;
+        if (keyboardState.IsKeyDown(Keys.Left)) playerPosition.X -= PLAYER_SPEED;
+        if (keyboardState.IsKeyDown(Keys.Right)) playerPosition.X += PLAYER_SPEED;
     }
 
     protected override void Draw(GameTime gameTime)
@@ -136,14 +172,7 @@ public class Game1 : Game
         base.Draw(gameTime);
     }
 
-    // Update Methods
-    private void PlayerMovement(KeyboardState keyboardState)
-    {
-        if (keyboardState.IsKeyDown(Keys.Up)) playerPosition.Y -= PLAYER_SPEED;
-        if (keyboardState.IsKeyDown(Keys.Down)) playerPosition.Y += PLAYER_SPEED;
-        if (keyboardState.IsKeyDown(Keys.Left)) playerPosition.X -= PLAYER_SPEED;
-        if (keyboardState.IsKeyDown(Keys.Right)) playerPosition.X += PLAYER_SPEED;
-    }
+
 
     private void ClearPastExplosions(GameTime gameTime)
     {
@@ -160,7 +189,6 @@ public class Game1 : Game
         }
     }
 
-
     private void ShootArrow(GameTime gameTime, KeyboardState keyboardState)
     {
         timeSinceLastArrow += (float)gameTime.ElapsedGameTime.TotalSeconds;
@@ -176,7 +204,8 @@ public class Game1 : Game
         for (int i = 0; i < orcs.Count; i++)
         {
             var orc = orcs[i];
-            Rectangle orcRect = new Rectangle((int)orc.Position.X, (int)orc.Position.Y, orc.Width, PLAYER_HEIGHT);
+            if (orc.IsDying) continue; // Skip if the orc is already dying
+            Rectangle orcRect = new Rectangle((int)orc.Position.X, (int)orc.Position.Y, orc.Width, ORC_HEIGHT);
 
             for (int j = 0; j < arrows.Count; j++)
             {
@@ -186,39 +215,14 @@ public class Game1 : Game
                 if (orcRect.Intersects(arrowRect))
                 {
                     // Suppression de l'orc et de la flèche en cas de collision
-                    orcs.RemoveAt(i);
+                    orc.Die();
                     arrows.RemoveAt(j);
-
-                    // Ajout de l'animation d'explosion
-                    var explosionPosition = new Vector2(orc.Position.X, orc.Position.Y);
-                    var explosionSprite = new AnimatedSprite(explosionPosition);
-                    explosionSprite.Animations.Add("Explosion", ExplosionAnimation);
-                    explosionSprite.PlayAnimation("Explosion");
-                    explosionSprites.Add(explosionSprite);
 
                     // Ajustez les index pour éviter de sauter un élément après suppression
                     i--;
                     j--;
                     break; // sortez de la boucle des flèches pour cet orc
                 }
-            }
-        }
-    }
-
-    private void UpdateArrowPosition(GameTime gameTime)
-    {
-        for (int i = 0; i < arrows.Count; i++)
-        {
-            var arrow = arrows[i];
-            arrow.X += arrowSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds;
-            if (arrow.X > 1280)
-            {
-                arrows.RemoveAt(i);
-                i--;
-            }
-            else
-            {
-                arrows[i] = arrow;
             }
         }
     }
@@ -230,9 +234,9 @@ public class Game1 : Game
         {
             spawnTimer = 0;
             float randomYPosition = MAP_TOP_BOUNDARY +
-                                    (float)random.NextDouble() * (MAP_BOTTOM_BOUNDARY - MAP_TOP_BOUNDARY - PLAYER_HEIGHT);
-            System.Diagnostics.Debug.WriteLine("Orc spawned at position: " + randomYPosition);
-            orcs.Add(new Orc(new Vector2(1280, randomYPosition), ORC_WIDTH));
+                                    (float)random.NextDouble() * (MAP_BOTTOM_BOUNDARY - MAP_TOP_BOUNDARY - ORC_HEIGHT); // Used ORC_HEIGHT
+            var newOrc = new Orc(new Vector2(1280, randomYPosition), ORC_WIDTH, ORC_HEIGHT, orcWalkingAnimation);
+            orcs.Add(new Orc(new Vector2(1280, randomYPosition), ORC_WIDTH, ORC_HEIGHT, orcWalkingAnimation)); // Passed ORC_HEIGHT
         }
     }
 
@@ -241,7 +245,14 @@ public class Game1 : Game
         for (int i = 0; i < orcs.Count; i++)
         {
             orcs[i].Update(gameTime);
-            if (orcs[i].Position.X + PLAYER_WIDTH < 0) // if the orc is completely off the left side of the screen
+
+            // Check if orc's death animation has finished
+            if (orcs[i].IsDying && orcs[i].DieAnimation.GetCurrentFrame() == orcDieAnimation.Frames[orcDieAnimation.Frames.Length - 1])
+            {
+                orcs.RemoveAt(i);
+                i--;
+            }
+            else if (orcs[i].Position.X + PLAYER_WIDTH < 0) // if the orc is completely off the left side of the screen
             {
                 orcs.RemoveAt(i);
                 i--;
@@ -267,7 +278,6 @@ public class Game1 : Game
         }
     }
 
-    
     // Draw Methods
     private void DrawArrows()
     {
@@ -282,15 +292,20 @@ public class Game1 : Game
     {
         foreach (var orc in orcs)
         {
-            Rectangle destRect = new Rectangle((int)orc.Position.X, (int)orc.Position.Y, orc.Width, 150);
-            spriteBatch.Draw(warriorTexture, destRect, null, Color.White, 0f, Vector2.Zero, SpriteEffects.FlipHorizontally,
-                0f);
+            Rectangle destRect = new Rectangle((int)orc.Position.X, (int)orc.Position.Y, orc.Width, orc.Height);
+            var frame = orc.WalkingAnimation.GetCurrentFrame(); // This will fetch the correct frame, whether walking or dying
+            if (frame != null)
+            {
+                spriteBatch.Draw(frame, destRect, frame.Bounds, Color.White, 0f, Vector2.Zero, SpriteEffects.FlipHorizontally, 0f);
+            }
         }
     }
 
+
+
     private void DrawExplosions()
     {
-        foreach (var explosion in explosionSprites)
+        foreach (var explosion in dyingOrcSprites)
         {
             var frame = explosion.GetCurrentFrame();
             if (frame != null)
@@ -301,106 +316,126 @@ public class Game1 : Game
             }
         }
     }
-}
 
-public class Orc
-{
-    public Vector2 Position { get; set; }
-    public float Speed { get; set; } = 2.0f;
-    public int Width { get; set; }
-
-    public Orc(Vector2 startPosition, int width)
+    public class Orc
     {
-        Position = startPosition;
-        Width = width;
-    }
+        public Vector2 Position { get; set; }
+        public float Speed { get; set; } = 2.0f;
+        public int Width { get; set; }
+        public int Height { get; set; }  // Added Height property
+        public AnimatedSprite WalkingAnimation { get; private set; } // Made it a public property
+        public AnimatedSprite DieAnimation { get; set; }
+        public bool IsDying { get; set; }
 
-    public void Update(GameTime gameTime)
-    {
-        Position = new Vector2(Position.X - Speed, Position.Y);
-    }
-}
 
-public class AnimatedSprite
-{
-    public Vector2 Position { get; set; }
-    public Dictionary<string, Animation> Animations { get; } = new Dictionary<string, Animation>();
-
-    private string currentAnimationKey;
-
-    public AnimatedSprite(Vector2 position)
-    {
-        Position = position;
-    }
-
-    public void PlayAnimation(string animationKey)
-    {
-        if (!Animations.ContainsKey(animationKey))
-            throw new ArgumentException("Invalid animation key");
-
-        if (currentAnimationKey != animationKey)
+        public Orc(Vector2 startPosition, int width, int height, Animation animation)
         {
-            Animations[animationKey].Reset();
-            currentAnimationKey = animationKey;
+            Position = startPosition;
+            Width = width;
+            Height = height;  // Set Height
+            WalkingAnimation = new AnimatedSprite(startPosition);
+            WalkingAnimation.Animations.Add("Walking", animation);
+            WalkingAnimation.PlayAnimation("Walking");
+        }
+
+        public void Update(GameTime gameTime)
+        {
+            Position = new Vector2(Position.X - Speed, Position.Y);
+            WalkingAnimation.Position = Position;
+            WalkingAnimation.Update(gameTime);
+        }
+
+        public void Die(Vector2 startPosition, int width, int height, Animation animation)
+        {
+            this.IsDying = true;
+            Position = startPosition;
+            Width = width;
+            Height = height;  // Set Height
+            DieAnimation = new AnimatedSprite(startPosition);
+            DieAnimation.Animations.Add("Walking", animation);
+            DieAnimation.PlayAnimation("OrcDie");
         }
     }
 
-    public void Update(GameTime gameTime)
+    public class Animation
     {
-        if (currentAnimationKey != null)
+        public Texture2D[] Frames { get; private set; }
+        public float FrameDuration { get; private set; } // temps pour un frame, par exemple 0.1f pour 10 images par seconde
+
+        private float elapsedTime;
+        private int currentFrame;
+
+        public Animation(float frameDuration, params Texture2D[] frames)
         {
-            Animations[currentAnimationKey].Update(gameTime);
+            Frames = frames;
+            FrameDuration = frameDuration;
+            elapsedTime = 0;
+            currentFrame = 0;
+        }
+
+        public void Update(GameTime gameTime)
+        {
+            elapsedTime += (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+            while (elapsedTime > FrameDuration)
+            {
+                elapsedTime -= FrameDuration;
+                currentFrame = (currentFrame + 1) % Frames.Length;
+            }
+        }
+
+        public Texture2D GetCurrentFrame()
+        {
+            Console.WriteLine($"currentFrame: {currentFrame}, Frames.Length: {Frames.Length}");
+            return Frames[currentFrame];
+        }
+
+        public void Reset()
+        {
+            currentFrame = 0;
+            elapsedTime = 0;
         }
     }
 
-    public Texture2D GetCurrentFrame()
+    public class AnimatedSprite
     {
-        if (currentAnimationKey != null)
+        public Vector2 Position { get; set; }
+        public Dictionary<string, Animation> Animations { get; } = new Dictionary<string, Animation>();
+
+        public string currentAnimationKey;
+
+        public AnimatedSprite(Vector2 position)
         {
-            return Animations[currentAnimationKey].GetCurrentFrame();
+            Position = position;
         }
-        return null;
+
+        public void PlayAnimation(string animationKey)
+        {
+            if (!Animations.ContainsKey(animationKey))
+                throw new ArgumentException("Invalid animation key");
+
+            if (currentAnimationKey != animationKey)
+            {
+                Animations[animationKey].Reset();
+                currentAnimationKey = animationKey;
+            }
+        }
+
+        public void Update(GameTime gameTime)
+        {
+            if (currentAnimationKey != null)
+            {
+                Animations[currentAnimationKey].Update(gameTime);
+            }
+        }
+
+        public Texture2D GetCurrentFrame()
+        {
+            if (currentAnimationKey != null)
+            {
+                return Animations[currentAnimationKey].GetCurrentFrame();
+            }
+            return null;
+        }
     }
 }
-
-public class Animation
-{
-    public Texture2D[] Frames { get; private set; }
-    public float FrameDuration { get; private set; } // temps pour un frame, par exemple 0.1f pour 10 images par seconde
-
-    private float elapsedTime;
-    private int currentFrame;
-
-    public Animation(float frameDuration, params Texture2D[] frames)
-    {
-        Frames = frames;
-        FrameDuration = frameDuration;
-        elapsedTime = 0;
-        currentFrame = 0;
-    }
-
-    public void Update(GameTime gameTime)
-    {
-        elapsedTime += (float)gameTime.ElapsedGameTime.TotalSeconds;
-
-        while (elapsedTime > FrameDuration)
-        {
-            elapsedTime -= FrameDuration;
-            currentFrame = (currentFrame + 1) % Frames.Length;
-        }
-    }
-
-    public Texture2D GetCurrentFrame()
-    {
-        return Frames[currentFrame];
-    }
-
-    public void Reset()
-    {
-        currentFrame = 0;
-        elapsedTime = 0;
-    }
-}
-
-
-

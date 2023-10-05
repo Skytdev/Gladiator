@@ -4,8 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Gladiator.Entities
+namespace Gladiator.Game.Entities
 {
+
     internal class Player
     {
     }
